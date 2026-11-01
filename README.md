@@ -59,7 +59,7 @@ cd buidl-e2e-google-adk-agents-applications
 5. runs all tests, then `scripts/warmup.py` — one short **live** run per agent, PASS/FAIL per agent
 
 Then run any agent: `source .venv/bin/activate && cd a_lead_generation_agent && adk web` → http://localhost:8000.
-`./setup.sh stop` stops the servers.
+`./setup.sh stop` stops the servers. `./setup.sh key` replaces the saved API key (it is checked with Google before saving) and re-runs the warm-up.
 
 Each folder's README has its own run steps, demo prompts and deployment commands. Agents (c) and (e) also
 need the **MCP Toolbox for Databases** server and PostgreSQL — the READMEs show a fully local setup

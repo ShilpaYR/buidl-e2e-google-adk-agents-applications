@@ -4,6 +4,7 @@
 #   ./setup.sh            everything: Python env, Gemini CLI, .env files, Postgres + MCP Toolbox, tests, live warm-up
 #   ./setup.sh infra      only (re)start Postgres + both Toolbox servers
 #   ./setup.sh warmup     only the live warm-up runs
+#   ./setup.sh key        replace the saved Gemini API key (checked with Google), then warm up
 #   ./setup.sh stop       stop Toolbox servers (and the Docker Postgres)
 #
 # Your API key is read once, written only to git-ignored .env files (chmod 600), never printed.
@@ -66,18 +67,53 @@ gemini_cli() {
 }
 
 # ------------------------------------------------------------------ keys + .env files
+key_ok() { # key → 0 if Google accepts it (lists models), else 1 with the reason in .run/key-check.log
+  [ "${SKIP_KEY_CHECK:-0}" = "1" ] && return 0   # offline CI only
+  KEY="$1" .venv/bin/python - >"$RUN/key-check.log" 2>&1 <<'PY'
+import os, sys
+from google import genai
+try:
+    client = genai.Client(api_key=os.environ["KEY"])  # keep a reference: a dropped client closes itself
+    next(iter(client.models.list()))
+except Exception as exc:
+    text = str(exc)
+    reason = ("API key not valid" if "API_KEY_INVALID" in text or "API key not valid" in text
+              else "API not enabled for this key's project" if "SERVICE_DISABLED" in text
+              else text.splitlines()[0][:200])
+    print(reason)
+    sys.exit(1)
+PY
+}
+
 env_files() {
   say "API keys and .env files"
-  KEY="${GOOGLE_API_KEY:-}"
-  if [ -z "$KEY" ] && [ -f a_lead_generation_agent/.env ]; then
-    KEY="$(grep -E '^GOOGLE_API_KEY=' a_lead_generation_agent/.env | head -1 | cut -d= -f2- || true)"
-    case "$KEY" in your-*|"") KEY="" ;; esac
+  KEY=""
+  if [ "${FORCE_KEY:-0}" != "1" ]; then
+    KEY="${GOOGLE_API_KEY:-}"
+    if [ -z "$KEY" ] && [ -f a_lead_generation_agent/.env ]; then
+      KEY="$(grep -E '^GOOGLE_API_KEY=' a_lead_generation_agent/.env | head -1 | cut -d= -f2- || true)"
+      case "$KEY" in your-*|"") KEY="" ;; esac
+    fi
   fi
-  if [ -z "$KEY" ]; then
-    echo "    Paste your Gemini API key (get one at https://aistudio.google.com/apikey)."
-    printf '    GOOGLE_API_KEY (hidden): '; read -rs KEY; echo
-  fi
-  [ -n "$KEY" ] || die "an API key is required"
+  tries=0
+  while :; do
+    if [ -z "$KEY" ]; then
+      [ -t 0 ] || die "no valid API key: run ./setup.sh key in a terminal"
+      echo "    Paste your Gemini API key from https://aistudio.google.com/apikey (starts with AIza)."
+      echo "    Nothing shows while you paste — that's normal. Then press Enter."
+      printf '    GOOGLE_API_KEY (hidden): '; read -rs KEY; echo
+    fi
+    KEY="$(printf '%s' "$KEY" | tr -d "[:space:]\"'")"   # drop stray spaces, newlines, quotes
+    [ -n "$KEY" ] || die "an API key is required"
+    if key_ok "$KEY"; then
+      ok "Google accepted the API key (${#KEY} characters, starts with ${KEY%"${KEY#????}"})"
+      break
+    fi
+    warn "Google rejected that key: $(tail -1 "$RUN/key-check.log")"
+    case "$KEY" in AIza*) ;; *) warn "Gemini API keys start with 'AIza' — this one starts with '${KEY%"${KEY#????}"}'" ;; esac
+    KEY=""; tries=$((tries+1))
+    [ $tries -lt 3 ] || die "3 keys rejected — create a new key at https://aistudio.google.com/apikey, then: ./setup.sh key"
+  done
   GH="${GITHUB_PERSONAL_ACCESS_TOKEN:-}"
   if [ -z "$GH" ] && [ -f c_mcp_bug_assistant/.env ]; then
     GH="$(grep -E '^GITHUB_PERSONAL_ACCESS_TOKEN=' c_mcp_bug_assistant/.env | head -1 | cut -d= -f2- || true)"
@@ -89,6 +125,11 @@ env_files() {
 import os
 from pathlib import Path
 key, gh, gem = os.environ["KEY"], os.environ["GH"], os.environ["GEMINI_BIN"]
+_old_b = Path("b_gemini_cli_tool_agent/.env")
+if gem == "gemini" and _old_b.exists():  # keep a local Gemini CLI path chosen by an earlier run
+    for _l in _old_b.read_text().splitlines():
+        if _l.startswith("GEMINI_CLI_BIN="):
+            gem = _l.split("=", 1)[1]
 extra = {
     "b_gemini_cli_tool_agent": {"GEMINI_API_KEY": key, **({"GEMINI_CLI_BIN": gem} if gem != "gemini" else {})},
     "c_mcp_bug_assistant": {"MCP_TOOLBOX_URL": "http://127.0.0.1:5000", **({"GITHUB_PERSONAL_ACCESS_TOKEN": gh} if gh else {})},
@@ -201,6 +242,7 @@ case "$CMD" in
           echo "    Finn's web app:     cd e_ecommerce_agent && uvicorn app:app --port 8080" ;;
   infra)  [ -x .venv/bin/python ] || python_env; postgres; toolbox ;;
   warmup) [ -x .venv/bin/python ] || python_env; warmup ;;
+  key)    [ -x .venv/bin/python ] || python_env; FORCE_KEY=1 env_files; warmup ;;
   stop)   stop ;;
-  *)      echo "usage: ./setup.sh [all|infra|warmup|stop]"; exit 1 ;;
+  *)      echo "usage: ./setup.sh [all|infra|warmup|key|stop]"; exit 1 ;;
 esac
