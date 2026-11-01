@@ -85,6 +85,8 @@ SPECS = {
 async def run_one(key: str) -> dict:
     folder, package = AGENT_DIRS[key]
     spec = SPECS[key]
+    if os.getenv("WARMUP_SIMULATE_ERROR"):  # test hook for the error/quota handling
+        raise RuntimeError(os.environ["WARMUP_SIMULATE_ERROR"])
     os.chdir(ROOT / folder)
     sys.path[:0] = [str(ROOT / folder), str(ROOT)]
 
@@ -190,8 +192,9 @@ def main() -> int:
                 msg += "  → check GOOGLE_API_KEY in this agent's .env"
             elif "Proxy" in msg or "ClientConnector" in msg or "Cannot connect" in msg:
                 msg += "  → no connection to the Gemini API (internet / VPN / firewall)"
-            elif "RESOURCE_EXHAUSTED" in msg or "429" in msg:
-                msg += "  → free-tier quota hit; wait a minute and re-run this agent with --only"
+            elif any(t in msg for t in ("RESOURCE_EXHAUSTED", "ResourceExhausted", "429")):
+                msg = ("QUOTA: Gemini free-tier limit reached for this key. Per-minute limits clear in ~1 min; "
+                       "daily limits reset at midnight Pacific. See https://aistudio.google.com/rate-limit")
             elif "404" in msg and "model" in msg.lower():
                 msg += "  → run: python scripts/warmup.py --pick-model"
             result = {"called": [], "errors": [msg[:600]], "final": ""}
@@ -199,14 +202,20 @@ def main() -> int:
         return 0
 
     rows, details = [], []
+    quota_stop = False
     for key in args.only:
         spec, folder = SPECS[key], AGENT_DIRS[key][0]
+        if quota_stop:  # don't spend more of a used-up quota
+            print(f"→ {spec.title} … skipped (quota)")
+            rows.append(f"| {spec.title} | SKIPPED | — | quota used up; run later with --only {key} |")
+            continue
         print(f"→ {spec.title} …", flush=True)
         started = time.monotonic()
         for attempt in (1, 2):  # one retry when Google is busy (503) or rate-limiting (429)
             try:
+                child_env = {**os.environ, "GEMINI_RETRY_ATTEMPTS": os.getenv("GEMINI_RETRY_ATTEMPTS", "3")}
                 proc = subprocess.run([sys.executable, __file__, "--child", key], cwd=ROOT / folder,
-                                      capture_output=True, text=True, timeout=spec.timeout_s)
+                                      capture_output=True, text=True, timeout=spec.timeout_s, env=child_env)
                 line = next((l for l in proc.stdout.splitlines() if l.startswith("WARMUP_RESULT ")), None)
                 if line is None:
                     out = (proc.stderr or proc.stdout).strip()
@@ -216,10 +225,12 @@ def main() -> int:
                 result = {"called": [], "errors": [f"timed out after {spec.timeout_s}s"], "final": ""}
             except Exception as exc:
                 result = {"called": [], "errors": [str(exc)[:400]], "final": ""}
-            busy = any(t in e for e in result["errors"] for t in ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED"))
-            if attempt == 1 and busy:
-                print("   Gemini is busy — retrying in 30 s …", flush=True)
-                time.sleep(30)
+            quota = any(e.startswith("QUOTA:") for e in result["errors"])
+            busy = any(t in e for e in result["errors"] for t in ("503", "UNAVAILABLE"))
+            if attempt == 1 and (busy or quota):
+                wait = int(os.getenv("WARMUP_RETRY_WAIT", "65" if quota else "30"))
+                print(f"   Gemini {'quota hit' if quota else 'is busy'} — retrying once in {wait} s …", flush=True)
+                time.sleep(wait)
                 continue
             break
         secs = time.monotonic() - started
@@ -235,6 +246,8 @@ def main() -> int:
         for p in problems:
             short = " | ".join(l.strip() for l in str(p).splitlines()[:2])
             print(f"   ! {short[:300]}")
+        if status == "FAIL" and any(str(p).startswith("QUOTA:") for p in problems):
+            quota_stop = True
         rows.append(f"| {spec.title} | {status} | {secs:.0f} s | {', '.join(dict.fromkeys(result['called'])) or '—'} |")
         details.append(f"### {spec.title} — {status}\n\n**Prompt:** {spec.prompt.splitlines()[0]}\n\n"
                        + ("".join(f"- problem: {p}\n" for p in problems) + "\n" if problems else "")
@@ -246,6 +259,10 @@ def main() -> int:
                       + "\n".join(rows) + "\n\n" + "\n".join(details))
     passed = sum("| PASS |" in r for r in rows)
     print(f"\n{passed}/{len(rows)} agents passed. Report: {report}")
+    if quota_stop:
+        todo = " ".join(k for k, r in zip(args.only, rows) if "| PASS |" not in r)
+        print("Quota used up. Check https://aistudio.google.com/rate-limit — after it resets (daily limits:\n"
+              f"midnight Pacific) run only the remaining agents:  .venv/bin/python scripts/warmup.py --only {todo}")
     return 0 if passed == len(rows) else 1
 
 
