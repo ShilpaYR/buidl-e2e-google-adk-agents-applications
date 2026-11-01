@@ -17,10 +17,10 @@ import os
 from google.adk.agents import Agent
 
 from .prompt import agent_instruction
-from .tools import all_tools
+from .tools import ADVANCED_MODEL, all_tools
 
 root_agent = Agent(
-    model=os.getenv("ADVANCED_MODEL", "gemini-3.8-flash"),
+    model=ADVANCED_MODEL,
     name="software_bug_assistant",
     description="Triages and debugs software tickets using a ticket database, web, StackOverflow and GitHub.",
     instruction=agent_instruction,

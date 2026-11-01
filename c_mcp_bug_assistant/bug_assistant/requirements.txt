@@ -1,4 +1,4 @@
-google-adk[toolbox]>=2.13.0,<3
+google-adk[toolbox,mcp]>=2.13.0,<3
 python-dotenv>=1.1
 langchain-community>=0.3.25
 stackapi>=0.3.1

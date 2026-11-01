@@ -203,17 +203,25 @@ def main() -> int:
         spec, folder = SPECS[key], AGENT_DIRS[key][0]
         print(f"→ {spec.title} …", flush=True)
         started = time.monotonic()
-        try:
-            proc = subprocess.run([sys.executable, __file__, "--child", key], cwd=ROOT / folder,
-                                  capture_output=True, text=True, timeout=spec.timeout_s)
-            line = next((l for l in proc.stdout.splitlines() if l.startswith("WARMUP_RESULT ")), None)
-            if line is None:
-                raise RuntimeError((proc.stderr or proc.stdout).strip().splitlines()[-1] if (proc.stderr or proc.stdout).strip() else "no output")
-            result = json.loads(line.removeprefix("WARMUP_RESULT "))
-        except subprocess.TimeoutExpired:
-            result = {"called": [], "errors": [f"timed out after {spec.timeout_s}s"], "final": ""}
-        except Exception as exc:
-            result = {"called": [], "errors": [str(exc)[:400]], "final": ""}
+        for attempt in (1, 2):  # one retry when Google is busy (503) or rate-limiting (429)
+            try:
+                proc = subprocess.run([sys.executable, __file__, "--child", key], cwd=ROOT / folder,
+                                      capture_output=True, text=True, timeout=spec.timeout_s)
+                line = next((l for l in proc.stdout.splitlines() if l.startswith("WARMUP_RESULT ")), None)
+                if line is None:
+                    out = (proc.stderr or proc.stdout).strip()
+                    raise RuntimeError(out.splitlines()[-1] if out else "no output")
+                result = json.loads(line.removeprefix("WARMUP_RESULT "))
+            except subprocess.TimeoutExpired:
+                result = {"called": [], "errors": [f"timed out after {spec.timeout_s}s"], "final": ""}
+            except Exception as exc:
+                result = {"called": [], "errors": [str(exc)[:400]], "final": ""}
+            busy = any(t in e for e in result["errors"] for t in ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED"))
+            if attempt == 1 and busy:
+                print("   Gemini is busy — retrying in 30 s …", flush=True)
+                time.sleep(30)
+                continue
+            break
         secs = time.monotonic() - started
 
         hit = [t for t in spec.expect_any if t in result["called"]]

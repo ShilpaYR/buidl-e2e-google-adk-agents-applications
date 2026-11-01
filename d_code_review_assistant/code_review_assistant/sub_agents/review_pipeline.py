@@ -7,7 +7,7 @@ state into the next agent's instruction at run time.
 from google.adk.agents import Agent, SequentialAgent
 from google.adk.code_executors import BuiltInCodeExecutor
 
-from ..config import config
+from ..config import config, critic_llm, worker_llm
 from ..tools import (
     analyze_code_structure, capture_code, check_code_style, save_grading_report,
     search_past_feedback, update_grading_progress,
@@ -15,7 +15,7 @@ from ..tools import (
 
 code_analyzer_agent = Agent(
     name="CodeAnalyzer",
-    model=config.worker_model,
+    model=worker_llm,
     description="Parses the code with the AST and summarises its structure.",
     instruction=(
         "Call `analyze_code_structure` with no arguments (it reads the submitted code). "
@@ -28,7 +28,7 @@ code_analyzer_agent = Agent(
 
 style_checker_agent = Agent(
     name="StyleChecker",
-    model=config.worker_model,
+    model=worker_llm,
     description="Runs PEP 8 checks and reports a style score.",
     instruction=(
         "Call `check_code_style` with no arguments. Report the score out of 100 and the most "
@@ -40,7 +40,7 @@ style_checker_agent = Agent(
 
 test_runner_agent = Agent(
     name="TestRunner",
-    model=config.worker_model,
+    model=worker_llm,
     description="Writes and executes tests in a sandbox with the built-in code executor.",
     instruction="""You are a testing specialist. The code under test is:
 
@@ -68,7 +68,7 @@ Do not print the test code in your final answer.""",
 
 feedback_synthesizer_agent = Agent(
     name="FeedbackSynthesizer",
-    model=config.critic_model,
+    model=critic_llm,
     description="Turns all findings into constructive, educational feedback and saves the report.",
     instruction="""You are a senior engineer mentoring a developer. Findings so far:
 

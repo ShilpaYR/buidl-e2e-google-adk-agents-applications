@@ -9,12 +9,12 @@ The loop ends either when FixValidator calls `exit_fix_loop` (which sets
 from google.adk.agents import Agent, LoopAgent, SequentialAgent
 from google.adk.code_executors import BuiltInCodeExecutor
 
-from ..config import config
+from ..config import config, critic_llm, worker_llm
 from ..tools import compile_fix_report, exit_fix_loop, reset_fix_state, save_fix_report, validate_fixed_style
 
 code_fixer_agent = Agent(
     name="CodeFixer",
-    model=config.worker_model,
+    model=worker_llm,
     description="Rewrites the code to fix the reported bugs and style issues.",
     instruction="""Fix this Python code.
 
@@ -36,7 +36,7 @@ fixed code in one ```python block — no explanation.""",
 
 fix_test_runner_agent = Agent(
     name="FixTestRunner",
-    model=config.worker_model,
+    model=worker_llm,
     description="Re-runs the same kinds of tests against the fixed code.",
     instruction="""Test the FIXED code:
 
@@ -53,7 +53,7 @@ tests_failed, tests_with_errors), "regressions" (list) and "verdict".""",
 
 fix_validator_agent = Agent(
     name="FixValidator",
-    model=config.worker_model,
+    model=worker_llm,
     description="Scores the fix and decides whether to stop the loop.",
     instruction="""Validate the latest fix attempt.
 1. Call `validate_fixed_style` (no arguments).
@@ -72,7 +72,7 @@ fix_attempt_loop = LoopAgent(
 
 fix_synthesizer_agent = Agent(
     name="FixSynthesizer",
-    model=config.critic_model,
+    model=critic_llm,
     description="Presents the final fixed code and what changed.",
     instruction="""Present the fix result to the developer.
 Fix report: {fix_report?}

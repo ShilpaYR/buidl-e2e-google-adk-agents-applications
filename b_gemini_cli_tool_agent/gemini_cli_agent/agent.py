@@ -34,8 +34,19 @@ try:
 except ImportError:  # pragma: no cover
     pass
 
-FAST_MODEL = os.getenv("FAST_MODEL", "gemini-3.8-flash")
-ADVANCED_MODEL = os.getenv("ADVANCED_MODEL", "gemini-3.8-flash")
+def gemini(name: str):
+    """Gemini model with automatic retries + exponential backoff on 429/5xx
+    (rate limits and 'model is experiencing high demand' 503s are usually brief)."""
+    from google.adk.models import Gemini
+    from google.genai import types
+
+    return Gemini(model=name, retry_options=types.HttpRetryOptions(
+        attempts=int(os.getenv("GEMINI_RETRY_ATTEMPTS", "6")), initial_delay=2.0, max_delay=30.0,
+        exp_base=2.0, http_status_codes=[408, 429, 500, 502, 503, 504]))
+
+
+FAST_MODEL = gemini(os.getenv("FAST_MODEL", "gemini-3.8-flash"))
+ADVANCED_MODEL = gemini(os.getenv("ADVANCED_MODEL", "gemini-3.8-flash"))
 MAX_CLI_CALLS_PER_SESSION = int(os.getenv("GEMINI_CLI_MAX_CALLS", "12"))
 
 

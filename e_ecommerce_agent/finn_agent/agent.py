@@ -26,6 +26,17 @@ try:
 except ImportError:  # pragma: no cover
     pass
 
+def gemini(name: str):
+    """Gemini model with automatic retries + exponential backoff on 429/5xx
+    (rate limits and 'model is experiencing high demand' 503s are usually brief)."""
+    from google.adk.models import Gemini
+    from google.genai import types
+
+    return Gemini(model=name, retry_options=types.HttpRetryOptions(
+        attempts=int(os.getenv("GEMINI_RETRY_ATTEMPTS", "6")), initial_delay=2.0, max_delay=30.0,
+        exp_base=2.0, http_status_codes=[408, 429, 500, 502, 503, 504]))
+
+
 TOOLBOX_URL = os.getenv("ECOMMERCE_TOOLBOX_URL", "http://127.0.0.1:5001")
 AUTH_MODE = os.getenv("AUTH_MODE", "demo").lower()
 
@@ -42,7 +53,7 @@ def build_toolset() -> ToolboxToolset:
 
 root_agent = Agent(
     name="finn",
-    model=os.getenv("FAST_MODEL", "gemini-3.8-flash"),
+    model=gemini(os.getenv("FAST_MODEL", "gemini-3.8-flash")),
     description="GenAI Sports shopping assistant: products, shopping list, stores, orders.",
     instruction=FINN_INSTRUCTION,
     tools=[build_toolset()],

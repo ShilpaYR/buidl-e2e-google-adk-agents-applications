@@ -7,7 +7,7 @@ pydantic>=2.11
 pydantic-settings>=2.10
 
 # (c) bug assistant + (e) e-commerce: MCP Toolbox for Databases client
-google-adk[toolbox]>=2.13.0,<3   # ToolboxToolset (pulls toolbox-adk + toolbox-core)
+google-adk[toolbox,mcp]>=2.13.0,<3   # ToolboxToolset (toolbox-adk) + McpToolset (mcp) — optional extras in ADK 2.x
 
 # (c) bug assistant: third-party LangChain StackExchange tool
 langchain-community>=0.3.25

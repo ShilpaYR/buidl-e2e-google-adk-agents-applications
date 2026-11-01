@@ -4,3 +4,4 @@ pycodestyle>=2.11
 psycopg2-binary>=2.9
 google-cloud-storage>=2.19
 uvicorn>=0.34
+python-dotenv>=1.1

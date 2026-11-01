@@ -14,12 +14,12 @@ Production:    main.py (FastAPI) on Cloud Run with Cloud SQL sessions + GCS arti
 
 from google.adk.agents import Agent
 
-from .config import config
+from .config import config, critic_llm, worker_llm
 from .sub_agents import code_fix_pipeline, code_review_pipeline
 
 root_agent = Agent(
     name="CodeReviewAssistant",
-    model=config.worker_model,
+    model=worker_llm,
     description="Reviews Python code (structure, style, executed tests) and can fix it automatically.",
     instruction="""You are a Python code review assistant.
 
