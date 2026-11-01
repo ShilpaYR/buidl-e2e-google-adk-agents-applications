@@ -1,0 +1,347 @@
+# MCP Toolbox config — PRODUCTION mode (AlloyDB for PostgreSQL + Google Sign-In).
+# Stored in Secret Manager and mounted into the Toolbox Cloud Run service.
+# Every user-scoped tool takes `user_email` from the *verified* Google ID token
+# that the agent forwards (authServices) — the LLM can't choose whose data it touches.
+authServices:
+  google_signin:
+    kind: google
+    clientId: ${GOOGLE_OAUTH_CLIENT_ID}
+
+sources:
+  store-alloydb:
+    kind: alloydb-postgres
+    project: ${PROJECT_ID}
+    region: ${REGION:us-central1}
+    cluster: ${ALLOYDB_CLUSTER:alloydb-cluster}
+    instance: ${ALLOYDB_INSTANCE:alloydb-inst}
+    database: store
+    user: ${DB_USER:postgres}
+    password: ${DB_PASS}
+    ipType: private
+
+tools:
+  search-products-by-description:
+    kind: postgres-sql
+    source: store-alloydb
+    description: >
+      Semantic product search: find sports products matching a natural-language need
+      (e.g. "shoes for an ultra-trail"). Returns name, brand, category, description, price, similarity.
+    parameters:
+      - name: description
+        type: string
+        description: What the customer is looking for.
+    statement: |
+      SELECT p.name, p.brand, p.category, p.description, min(v.price) AS price_from,
+             round((1 - (p.embedding <=> embedding('text-embedding-005', $1)::vector))::numeric, 3) AS similarity
+      FROM products p JOIN products_variants v USING (product_id)
+      GROUP BY p.product_id
+      ORDER BY similarity DESC
+      LIMIT 5;
+
+  search-products-by-brand:
+    kind: postgres-sql
+    source: store-alloydb
+    description: List products of a brand. Pass only the brand name, e.g. "Nike" from "show me Nike stuff".
+    parameters:
+      - name: brand
+        type: string
+        description: Brand name only.
+    statement: |
+      SELECT p.name, p.brand, p.category, p.description, min(v.price) AS price_from
+      FROM products p JOIN products_variants v USING (product_id)
+      WHERE p.brand ILIKE $1
+      GROUP BY p.product_id ORDER BY p.popularity_score DESC;
+
+  search-products-by-size:
+    kind: postgres-sql
+    source: store-alloydb
+    description: Products available in a given size within a category (default category Running).
+    parameters:
+      - name: size
+        type: string
+        description: Size, e.g. "10", "M", "One Size".
+      - name: category
+        type: string
+        description: Category such as Running, Hiking, Cycling, Tennis, Yoga.
+        default: Running
+    statement: |
+      SELECT p.name, p.brand, p.category, v.size, v.color, v.price
+      FROM products p JOIN products_variants v USING (product_id)
+      WHERE v.size = $1 AND p.category ILIKE $2
+      ORDER BY p.brand, p.name;
+
+  tell-more-details-about-product:
+    kind: postgres-sql
+    source: store-alloydb
+    description: Full details of one product by name — sizes, colors and prices.
+    parameters:
+      - name: product_name
+        type: string
+        description: Exact or partial product name.
+    statement: |
+      SELECT p.name, p.brand, p.category, p.description,
+             string_agg(DISTINCT v.size, ', ') AS sizes,
+             string_agg(DISTINCT v.color, ', ') AS colors,
+             min(v.price) AS price
+      FROM products p JOIN products_variants v USING (product_id)
+      WHERE p.name ILIKE '%' || $1 || '%'
+      GROUP BY p.product_id LIMIT 3;
+
+  check-inventory-at-store:
+    kind: postgres-sql
+    source: store-alloydb
+    description: Units in stock of a product per size/color at a given store.
+    parameters:
+      - name: product_name
+        type: string
+        description: Product name.
+      - name: store_name
+        type: string
+        description: Store name (partial match allowed).
+    statement: |
+      SELECT s.name AS store, p.name AS product, v.size, v.color, i.quantity
+      FROM inventory i
+      JOIN products_variants v USING (variant_id)
+      JOIN products p USING (product_id)
+      JOIN stores s USING (store_id)
+      WHERE p.name ILIKE '%' || $1 || '%' AND s.name ILIKE '%' || $2 || '%'
+      ORDER BY v.size, v.color;
+
+  add-product-to-shopping-list:
+    kind: postgres-sql
+    source: store-alloydb
+    description: Add one unit of a product (specific size and color) to the signed-in user's shopping list.
+    parameters:
+      - name: product_name
+        type: string
+        description: Exact product name.
+      - name: size
+        type: string
+        description: Size, e.g. "10" or "M".
+      - name: color
+        type: string
+        description: Color, e.g. "Blue".
+      - name: user_email
+        type: string
+        description: Signed-in user's email (from the verified Google ID token).
+        authServices:
+          - name: google_signin
+            field: email
+    statement: |
+      WITH u AS (SELECT user_id FROM users WHERE email = $4),
+      lst AS (
+        INSERT INTO shopping_lists (user_id) SELECT user_id FROM u
+        ON CONFLICT (user_id) DO UPDATE SET user_id = EXCLUDED.user_id
+        RETURNING list_id),
+      v AS (
+        SELECT pv.variant_id, p.name, pv.size, pv.color FROM products_variants pv JOIN products p USING (product_id)
+        WHERE lower(p.name) = lower($1) AND pv.size = $2 AND lower(pv.color) = lower($3)),
+      ins AS (
+        INSERT INTO shopping_list_items (list_id, variant_id, quantity)
+        SELECT lst.list_id, v.variant_id, 1 FROM lst, v
+        ON CONFLICT (list_id, variant_id) DO UPDATE SET quantity = shopping_list_items.quantity + 1
+        RETURNING quantity)
+      SELECT COALESCE(
+        (SELECT 'Added ' || v.name || ' (size ' || v.size || ', ' || v.color || '). Quantity in list: ' || ins.quantity FROM v, ins),
+        'Not added: no variant with that exact product name, size and color.') AS result;
+
+  show-shopping-list:
+    kind: postgres-sql
+    source: store-alloydb
+    description: Show the signed-in user's shopping list.
+    parameters:
+      - name: user_email
+        type: string
+        description: Signed-in user's email (from the verified Google ID token).
+        authServices:
+          - name: google_signin
+            field: email
+    statement: |
+      SELECT u.first_name, p.name AS product, p.brand, p.category, v.size, v.color, v.price, sli.quantity
+      FROM users u
+      JOIN shopping_lists sl ON sl.user_id = u.user_id
+      JOIN shopping_list_items sli ON sli.list_id = sl.list_id
+      JOIN products_variants v ON v.variant_id = sli.variant_id
+      JOIN products p ON p.product_id = v.product_id
+      WHERE u.email = $1
+      ORDER BY p.name;
+
+  find-stores-near-user:
+    kind: postgres-sql
+    source: store-alloydb
+    description: The 3 stores closest to the signed-in user, with distance in meters and coordinates.
+    parameters:
+      - name: user_email
+        type: string
+        description: Signed-in user's email (from the verified Google ID token).
+        authServices:
+          - name: google_signin
+            field: email
+    statement: |
+      SELECT s.name, s.address, s.city,
+             round(distance_m(u.latitude, u.longitude, s.latitude, s.longitude)) AS distance_meters,
+             s.latitude, s.longitude, u.latitude AS user_latitude, u.longitude AS user_longitude
+      FROM users u CROSS JOIN stores s
+      WHERE u.email = $1
+      ORDER BY distance_meters
+      LIMIT 3;
+
+  list-delivery-methods-by-store:
+    kind: postgres-sql
+    source: store-alloydb
+    description: Delivery options (name, description, cost, delivery time) for a store.
+    parameters:
+      - name: store_name
+        type: string
+        description: Store name (partial match allowed).
+    statement: |
+      SELECT d.name, d.description, d.base_cost AS cost, d.estimated_delivery_time
+      FROM delivery_methods d JOIN stores s USING (store_id)
+      WHERE s.name ILIKE '%' || $1 || '%'
+      ORDER BY d.base_cost;
+
+  place-order:
+    kind: postgres-sql
+    source: store-alloydb
+    description: >
+      Turn the signed-in user's whole shopping list into an order fulfilled by a store, then empty
+      the list. Confirm store and delivery method with the user before calling.
+    parameters:
+      - name: store_name
+        type: string
+        description: Exact store name.
+      - name: delivery_method
+        type: string
+        description: Delivery method name.
+        default: Standard Home Delivery
+      - name: user_email
+        type: string
+        description: Signed-in user's email (from the verified Google ID token).
+        authServices:
+          - name: google_signin
+            field: email
+    statement: |
+      WITH u AS (SELECT user_id, address || ', ' || city || ' ' || postal_code AS addr FROM users WHERE email = $3),
+      s AS (SELECT store_id FROM stores WHERE lower(name) = lower($1)),
+      d AS (SELECT dm.delivery_method_id, dm.base_cost FROM delivery_methods dm JOIN s USING (store_id)
+            WHERE lower(dm.name) = lower($2)),
+      items AS (
+        SELECT sli.item_id, sli.variant_id, sli.quantity, pv.price, p.name,
+               'Size: ' || pv.size || ', Color: ' || pv.color AS details
+        FROM shopping_lists sl JOIN u ON sl.user_id = u.user_id
+        JOIN shopping_list_items sli ON sli.list_id = sl.list_id
+        JOIN products_variants pv ON pv.variant_id = sli.variant_id
+        JOIN products p ON p.product_id = pv.product_id),
+      o AS (
+        INSERT INTO orders (user_id, store_id, delivery_method_id, shipping_address, shipping_cost, total_amount)
+        SELECT u.user_id, s.store_id, d.delivery_method_id, u.addr, d.base_cost,
+               d.base_cost + (SELECT sum(quantity * price) FROM items)
+        FROM u, s, d WHERE EXISTS (SELECT 1 FROM items)
+        RETURNING order_id, total_amount),
+      oi AS (
+        INSERT INTO order_items (order_id, variant_id, quantity, price_at_purchase, product_name, variant_details)
+        SELECT o.order_id, i.variant_id, i.quantity, i.price, i.name, i.details FROM o, items i
+        RETURNING 1),
+      cleared AS (
+        DELETE FROM shopping_list_items WHERE item_id IN (SELECT item_id FROM items) AND EXISTS (SELECT 1 FROM o)
+        RETURNING 1)
+      SELECT COALESCE(
+        (SELECT 'Order #' || order_id || ' placed. Total: $' || total_amount FROM o),
+        'No order placed: the shopping list is empty, or the store / delivery method was not found.') AS result;
+
+  check-order-status:
+    kind: postgres-sql
+    source: store-alloydb
+    description: The signed-in user's orders with status, store, items, delivery method and totals.
+    parameters:
+      - name: user_email
+        type: string
+        description: Signed-in user's email (from the verified Google ID token).
+        authServices:
+          - name: google_signin
+            field: email
+    statement: |
+      SELECT o.order_id, o.order_status, s.name AS store, o.total_amount, o.shipping_address,
+             d.name AS delivery_method, d.base_cost AS delivery_cost,
+             string_agg(oi.product_name || ' (' || oi.variant_details || ') x' || oi.quantity
+                        || ' $' || oi.price_at_purchase, '; ') AS items
+      FROM orders o
+      JOIN users u ON u.user_id = o.user_id
+      JOIN stores s ON s.store_id = o.store_id
+      LEFT JOIN delivery_methods d ON d.delivery_method_id = o.delivery_method_id
+      LEFT JOIN order_items oi ON oi.order_id = o.order_id
+      WHERE u.email = $1
+      GROUP BY o.order_id, s.name, d.name, d.base_cost
+      ORDER BY o.order_id DESC;
+
+  update-order-delivery-method:
+    kind: postgres-sql
+    source: store-alloydb
+    description: Change the delivery method of one of the signed-in user's pending orders (recomputes the total).
+    parameters:
+      - name: order_id
+        type: integer
+        description: Order number.
+      - name: delivery_method
+        type: string
+        description: New delivery method name, e.g. "Express Delivery".
+      - name: user_email
+        type: string
+        description: Signed-in user's email (from the verified Google ID token).
+        authServices:
+          - name: google_signin
+            field: email
+    statement: |
+      WITH o AS (
+        SELECT o.order_id, o.store_id FROM orders o JOIN users u ON u.user_id = o.user_id
+        WHERE o.order_id = $1 AND u.email = $3 AND o.order_status = 'pending'),
+      d AS (SELECT dm.delivery_method_id, dm.base_cost, dm.name FROM delivery_methods dm JOIN o USING (store_id)
+            WHERE lower(dm.name) = lower($2)),
+      upd AS (
+        UPDATE orders SET delivery_method_id = d.delivery_method_id,
+                          total_amount = orders.total_amount - orders.shipping_cost + d.base_cost,
+                          shipping_cost = d.base_cost
+        FROM d WHERE orders.order_id = (SELECT order_id FROM o)
+        RETURNING orders.order_id, orders.total_amount, d.name)
+      SELECT COALESCE(
+        (SELECT 'Order #' || order_id || ' now uses ' || name || '. New total: $' || total_amount FROM upd),
+        'Not updated: no pending order with that number for this user, or unknown delivery method.') AS result;
+
+  cancel-order:
+    kind: postgres-sql
+    source: store-alloydb
+    description: Cancel one of the signed-in user's pending orders. Confirm with the user first.
+    parameters:
+      - name: order_id
+        type: integer
+        description: Order number.
+      - name: user_email
+        type: string
+        description: Signed-in user's email (from the verified Google ID token).
+        authServices:
+          - name: google_signin
+            field: email
+    statement: |
+      WITH upd AS (
+        UPDATE orders o SET order_status = 'cancelled'
+        FROM users u
+        WHERE o.user_id = u.user_id AND o.order_id = $1 AND u.email = $2 AND o.order_status = 'pending'
+        RETURNING o.order_id)
+      SELECT COALESCE((SELECT 'Order #' || order_id || ' cancelled.' FROM upd),
+                      'Not cancelled: no pending order with that number for this user.') AS result;
+
+toolsets:
+  finn_toolset:
+    - search-products-by-description
+    - search-products-by-brand
+    - search-products-by-size
+    - tell-more-details-about-product
+    - check-inventory-at-store
+    - add-product-to-shopping-list
+    - show-shopping-list
+    - find-stores-near-user
+    - list-delivery-methods-by-store
+    - place-order
+    - check-order-status
+    - update-order-delivery-method
+    - cancel-order

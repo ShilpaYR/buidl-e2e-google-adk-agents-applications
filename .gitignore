@@ -1,0 +1,39 @@
+# Secrets — never commit
+.env
+*.env
+!.env.example
+**/service-account*.json
+**/credentials*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# ADK local artifacts
+.adk/
+**/.adk/
+*.db
+adk_sessions.db
+
+# Node
+node_modules/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Local tool binaries
+toolbox
+!toolbox/
+
+# setup.sh runtime files (logs, pids, warm-up report)
+.run/

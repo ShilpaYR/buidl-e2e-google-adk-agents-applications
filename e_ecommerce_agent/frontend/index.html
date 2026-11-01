@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finn · GenAI Sports</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #ffffff; --ink: #15171a; --muted: #6b6f76; --line: #e3ded3;
+    --accent: #e4572e; --accent-ink: #ffffff; --track: #1f3d2b; --bubble: #f7f5f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111315; --panel: #1a1d20; --ink: #eceae4; --muted: #9aa0a6; --line: #2b3035;
+            --accent: #ff6b3d; --accent-ink: #111315; --track: #9fd3b1; --bubble: #22262a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 Inter, system-ui, sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+           padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; }
+  .brand { font-family: "Barlow Condensed", sans-serif; font-size: 26px; letter-spacing: .5px; text-transform: uppercase; }
+  .brand b { color: var(--accent); }
+  .brand small { display: block; font: 500 12px Inter, sans-serif; color: var(--muted); text-transform: none; letter-spacing: 0; }
+  #who select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); }
+  main { max-width: 820px; margin: 0 auto; padding: 16px 16px 140px; }
+  .msg { margin: 14px 0; display: flex; }
+  .msg.user { justify-content: flex-end; }
+  .bubble { max-width: 88%; padding: 10px 14px; border-radius: 14px; background: var(--bubble); border: 1px solid var(--line); overflow-x: auto; }
+  .user .bubble { background: var(--track); color: var(--bg); border-color: transparent; }
+  .bubble table { border-collapse: collapse; margin: 6px 0; font-size: 14px; }
+  .bubble th, .bubble td { border-bottom: 1px solid var(--line); padding: 4px 8px; text-align: left; }
+  .bubble p:first-child { margin-top: 0; } .bubble p:last-child { margin-bottom: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+  .chip { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; }
+  .chip:hover { border-color: var(--accent); }
+  form { position: fixed; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, var(--bg) 30%); padding: 24px 16px 16px; }
+  .bar { max-width: 820px; margin: 0 auto; display: flex; gap: 8px; }
+  textarea { flex: 1; resize: none; font: inherit; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); min-height: 48px; }
+  button.send { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 12px; padding: 0 18px; font-weight: 600; cursor: pointer; }
+  button.send:disabled { opacity: .5; cursor: default; }
+  .hint { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">GenAI <b>Sports</b><small>Finn, your shopping agent</small></div>
+  <div id="who"></div>
+</header>
+<main id="log">
+  <p class="hint" id="hello">Ask Finn about gear, your shopping list, stores nearby or your orders.</p>
+  <div class="chips" id="chips"></div>
+</main>
+<form id="f">
+  <div class="bar">
+    <textarea id="q" placeholder="e.g. I need running shoes for an ultra-trail" rows="1"></textarea>
+    <button class="send" id="send">Send</button>
+  </div>
+</form>
+<script>
+const SUGGESTIONS = [
+  "I'm looking for running shoes for an ultra-trail",
+  "Tell me more about the Speedgoat 6",
+  "Add the Speedgoat 6, size 10, Blue to my shopping list",
+  "Show my shopping list",
+  "Find stores near me",
+  "What delivery methods does GenAI Sports Downtown San Jose have?",
+  "Place an order at GenAI Sports Downtown San Jose",
+  "Show my orders",
+  "Change my last order to Express Delivery",
+];
+const log = document.getElementById("log"), q = document.getElementById("q"), send = document.getElementById("send");
+let sessionId = null, idToken = "", demoUser = "", cfg = {};
+
+function render(md) { return DOMPurify.sanitize(marked.parse(md || "")); }
+function add(role, text) {
+  const row = document.createElement("div"); row.className = "msg " + role;
+  const b = document.createElement("div"); b.className = "bubble";
+  if (role === "user") b.textContent = text; else b.innerHTML = render(text);
+  row.appendChild(b); log.appendChild(row); window.scrollTo(0, document.body.scrollHeight); return b;
+}
+
+async function ask(text) {
+  if (!text.trim()) return;
+  if (cfg.auth_mode === "google" && !idToken) { add("bot", "Please sign in with Google first."); return; }
+  add("user", text); q.value = ""; send.disabled = true;
+  const bubble = add("bot", "…"); let acc = "";
+  const headers = { "Content-Type": "application/json" };
+  if (idToken) headers["Authorization"] = "Bearer " + idToken;
+  if (demoUser) headers["X-Demo-User"] = demoUser;
+  try {
+    const res = await fetch("/chat", { method: "POST", headers, body: JSON.stringify({ message: text, session_id: sessionId }) });
+    if (!res.ok) { bubble.innerHTML = render("**Error:** " + ((await res.json()).detail || res.status)); return; }
+    sessionId = res.headers.get("X-Session-Id") || sessionId;
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    for (;;) { const { done, value } = await reader.read(); if (done) break;
+      acc += dec.decode(value, { stream: true }); bubble.innerHTML = render(acc); window.scrollTo(0, document.body.scrollHeight); }
+  } catch (e) { bubble.textContent = "Network error — is the server running?"; }
+  finally { send.disabled = false; q.focus(); }
+}
+
+function onGoogle(resp) { idToken = resp.credential; sessionId = null;
+  document.getElementById("who").textContent = "Signed in"; }
+
+async function init() {
+  cfg = await (await fetch("/config")).json();
+  const who = document.getElementById("who");
+  if (cfg.auth_mode === "google") {
+    const s = document.createElement("script"); s.src = "https://accounts.google.com/gsi/client"; s.async = true;
+    s.onload = () => { google.accounts.id.initialize({ client_id: cfg.google_client_id, callback: onGoogle });
+      google.accounts.id.renderButton(who, { theme: "outline", size: "medium" }); };
+    document.head.appendChild(s);
+  } else {
+    const sel = document.createElement("select");
+    for (const [email, name] of Object.entries(cfg.demo_users)) {
+      const o = document.createElement("option"); o.value = email; o.textContent = `${name} (demo)`; sel.appendChild(o); }
+    demoUser = sel.value; sel.onchange = () => { demoUser = sel.value; sessionId = null; add("bot", `Now shopping as **${sel.selectedOptions[0].textContent}**.`); };
+    who.appendChild(sel);
+  }
+  const chips = document.getElementById("chips");
+  for (const s of SUGGESTIONS) { const c = document.createElement("button"); c.type = "button"; c.className = "chip"; c.textContent = s; c.onclick = () => ask(s); chips.appendChild(c); }
+}
+document.getElementById("f").onsubmit = (e) => { e.preventDefault(); ask(q.value); };
+q.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(q.value); } });
+init();
+</script>
+</body>
+</html>

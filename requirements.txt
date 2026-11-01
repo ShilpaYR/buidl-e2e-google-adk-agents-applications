@@ -1,0 +1,27 @@
+# One environment runs all five agents.
+# Tested with Python 3.12/3.13 and google-adk 2.13.0 (October 2026).
+google-adk>=2.13.0,<3
+google-genai>=1.40
+python-dotenv>=1.1
+pydantic>=2.11
+pydantic-settings>=2.10
+
+# (c) bug assistant + (e) e-commerce: MCP Toolbox for Databases client
+google-adk[toolbox]>=2.13.0,<3   # ToolboxToolset (pulls toolbox-adk + toolbox-core)
+
+# (c) bug assistant: third-party LangChain StackExchange tool
+langchain-community>=0.3.25
+stackapi>=0.3.1
+
+# (d) code review assistant: deterministic style checks
+pycodestyle>=2.11
+
+# serving / deployment
+fastapi>=0.115
+uvicorn>=0.34
+psycopg2-binary>=2.9  # Cloud SQL / AlloyDB session store (d)
+
+# tests
+pytest>=8.3
+pytest-asyncio>=0.26
+pyyaml>=6.0

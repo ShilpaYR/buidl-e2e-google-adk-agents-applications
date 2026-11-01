@@ -1,0 +1,49 @@
+# Local infrastructure for agents (c) and (e):
+#   postgres          :5432  tickets DB (c) + store DB (e), sample data loaded on first start
+#   toolbox-tickets   :5000  MCP Toolbox for Databases  → ticketsdb  (bug assistant)
+#   toolbox-store     :5001  MCP Toolbox for Databases  → store      (Finn)
+# setup.sh starts only `postgres` here and runs Toolbox natively (npx), because Toolbox
+# ships no linux-arm64 build. To run everything in Docker instead:
+#   docker compose --profile toolbox up -d      (Toolbox runs as linux/amd64, emulated on Apple Silicon)
+# Stop: docker compose down     Reset data: docker compose down -v
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./c_mcp_bug_assistant/db/schema.sql:/docker-entrypoint-initdb.d/01_tickets_schema.sql:ro
+      - ./c_mcp_bug_assistant/db/seed.sql:/docker-entrypoint-initdb.d/02_tickets_seed.sql:ro
+      - ./e_ecommerce_agent/db/schema.sql:/docker-entrypoint-initdb.d/03_store_schema.sql:ro
+      - ./e_ecommerce_agent/db/seed.sql:/docker-entrypoint-initdb.d/04_store_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres && psql -U postgres -d store -tAc 'select 1 from delivery_methods limit 1' | grep -q 1"]
+      interval: 3s
+      retries: 40
+
+  toolbox-tickets:
+    profiles: [toolbox]
+    platform: linux/amd64
+    image: node:22-slim
+    working_dir: /cfg
+    command: ["npx", "-y", "@toolbox-sdk/server@1.15.0", "--config", "/cfg/tools.local.yaml", "--address", "0.0.0.0", "--port", "5000"]
+    environment: {DB_HOST: postgres, DB_USER: postgres, DB_PASS: postgres}
+    volumes: ["./c_mcp_bug_assistant/mcp-toolbox:/cfg:ro"]
+    ports: ["5000:5000"]
+    depends_on: {postgres: {condition: service_healthy}}
+
+  toolbox-store:
+    profiles: [toolbox]
+    platform: linux/amd64
+    image: node:22-slim
+    working_dir: /cfg
+    command: ["npx", "-y", "@toolbox-sdk/server@1.15.0", "--config", "/cfg/tools.local.yaml", "--address", "0.0.0.0", "--port", "5001"]
+    environment: {DB_HOST: postgres, DB_USER: postgres, DB_PASS: postgres}
+    volumes: ["./e_ecommerce_agent/toolbox:/cfg:ro"]
+    ports: ["5001:5001"]
+    depends_on: {postgres: {condition: service_healthy}}
+
+volumes:
+  pgdata:
