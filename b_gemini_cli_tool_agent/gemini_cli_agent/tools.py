@@ -32,6 +32,38 @@ CLI_TIMEOUT_S = int(os.getenv("GEMINI_CLI_TIMEOUT", "600"))
 CLONE_TIMEOUT_S = 300
 MAX_OUTPUT_CHARS = int(os.getenv("GEMINI_CLI_MAX_OUTPUT", "20000"))
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def find_gemini() -> Optional[str]:
+    """Locate the Gemini CLI even when npm's global bin folder isn't on PATH
+    (common on macOS with conda, nvm or a custom npm prefix)."""
+    if os.path.sep in GEMINI_BIN:
+        return GEMINI_BIN if os.access(GEMINI_BIN, os.X_OK) else None
+    found = shutil.which(GEMINI_BIN)
+    if found:
+        return found
+    candidates = []
+    npm = shutil.which("npm")
+    if npm:
+        try:
+            import subprocess
+            prefix = subprocess.run([npm, "prefix", "-g"], capture_output=True, text=True, timeout=15).stdout.strip()
+            if prefix:
+                candidates.append(Path(prefix) / "bin" / "gemini")
+        except Exception:
+            pass
+    home = Path.home()
+    candidates += [REPO_ROOT / ".run" / "npm" / "node_modules" / ".bin" / "gemini",
+                   home / ".npm-global" / "bin" / "gemini", Path("/opt/homebrew/bin/gemini"),
+                   Path("/usr/local/bin/gemini")]
+    candidates += sorted((home / ".nvm" / "versions" / "node").glob("*/bin/gemini"), reverse=True)
+    for c in candidates:
+        if c.is_file() and os.access(c, os.X_OK):
+            return str(c)
+    return None
+
+
 GITHUB_URL = re.compile(r"^https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$")
 
 
@@ -137,10 +169,12 @@ async def gemini_cli(task: str, tool_context: ToolContext, github_url: str = "")
     repo_path = tool_context.state.get("repo_path")
     if not repo_path or not Path(repo_path).exists():
         return {"status": "error", "message": "No repository cloned yet. Provide a GitHub URL first."}
-    if shutil.which(GEMINI_BIN) is None:
-        return {"status": "error", "message": f"'{GEMINI_BIN}' not found. Install: npm install -g @google/gemini-cli"}
+    gemini_bin = find_gemini()
+    if gemini_bin is None:
+        return {"status": "error", "message": "Gemini CLI not found. Install it with: npm install -g @google/gemini-cli "
+                "(or set GEMINI_CLI_BIN in this agent's .env to the full path of `gemini`)."}
 
-    cmd = [GEMINI_BIN, "-p", task, "-o", "json", "--approval-mode", APPROVAL_MODE, "--skip-trust"]
+    cmd = [gemini_bin, "-p", task, "-o", "json", "--approval-mode", APPROVAL_MODE, "--skip-trust"]
     if CLI_MODEL:
         cmd += ["-m", CLI_MODEL]
     try:

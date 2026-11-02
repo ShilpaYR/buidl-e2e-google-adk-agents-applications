@@ -56,8 +56,11 @@ gemini_cli() {
   GEMINI_BIN="gemini"
   if have gemini; then
     ok "Gemini CLI $(gemini --version 2>/dev/null | tail -1) already installed"
-  elif npm install -g @google/gemini-cli >"$RUN/npm-gemini.log" 2>&1; then
-    ok "Gemini CLI installed globally"
+  elif npm install -g @google/gemini-cli >"$RUN/npm-gemini.log" 2>&1 && [ -x "$(npm prefix -g)/bin/gemini" ]; then
+    if ! have gemini; then
+      GEMINI_BIN="$(npm prefix -g)/bin/gemini"   # installed, but npm's bin folder isn't on PATH
+    fi
+    ok "Gemini CLI installed globally ($GEMINI_BIN)"
   else
     warn "global npm install not permitted — installing Gemini CLI inside .run/"
     npm install --prefix "$RUN/npm" @google/gemini-cli >"$RUN/npm-gemini.log" 2>&1 || die "npm install failed, see $RUN/npm-gemini.log"

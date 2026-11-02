@@ -187,9 +187,15 @@ def main() -> int:
         try:
             result = asyncio.run(run_one(args.child))
         except BaseException as exc:  # report the real cause, not trailing library warnings
+            import traceback
+            log = ROOT / ".run" / f"warmup-{args.child}.log"
+            log.parent.mkdir(exist_ok=True)
+            log.write_text("".join(traceback.format_exception(exc)))
             msg = f"{type(exc).__name__}: {exc}"
-            if "API key" in msg or "API_KEY" in msg or "PERMISSION_DENIED" in msg:
+            if "API key not valid" in msg or "API_KEY_INVALID" in msg:
                 msg += "  → check GOOGLE_API_KEY in this agent's .env"
+            elif "PERMISSION_DENIED" in msg:
+                msg += f"  → full trace: .run/warmup-{args.child}.log"
             elif "Proxy" in msg or "ClientConnector" in msg or "Cannot connect" in msg:
                 msg += "  → no connection to the Gemini API (internet / VPN / firewall)"
             elif any(t in msg for t in ("RESOURCE_EXHAUSTED", "ResourceExhausted", "429")):
