@@ -3,7 +3,7 @@
 Five production-minded agents built with the **Google Agent Development Kit (ADK) 2.13**, each runnable
 locally with `adk web`, covered by automated tests, and deployable to Google Cloud.
 
-> 📺 **Video walkthrough:** _YouTube link coming soon_
+> 📺 **Video walkthrough (code + live execution of all five agents):** https://youtu.be/SFmTmT9PZ9s
 > 👤 **Author:** Shilpa Yelkur Ramakrishnaiah ([@ShilpaYR](https://github.com/ShilpaYR)) · San José State University · Fall 2026
 
 | # | Agent | Key ADK concepts | Folder |
@@ -13,6 +13,14 @@ locally with `adk web`, covered by automated tests, and deployable to Google Clo
 | c | **MCP-tools bug assistant** | 5 tool types in one agent: function, built-in (`google_search` as agent-tool), LangChain (StackExchange), **MCP Toolbox for Databases** (PostgreSQL/Cloud SQL + vector search), **GitHub remote MCP** (read-only filter) | [`c_mcp_bug_assistant`](c_mcp_bug_assistant) |
 | d | **Production code-review assistant** | Review pipeline (AST tool → PEP 8 tool → sandboxed test execution with `BuiltInCodeExecutor` → critic), **`LoopAgent`** fix loop with `escalate`, typed config, `user:` state across sessions, artifacts, Cloud SQL sessions, tracing | [`d_code_review_assistant`](d_code_review_assistant) |
 | e | **E-commerce agent "Finn"** | `ToolboxToolset` over MCP → AlloyDB (vector search, orders), **identity from verified Google ID token** (Toolbox `authServices`) or bound params, FastAPI streaming backend + web UI, 3-service Cloud Run deployment | [`e_ecommerce_agent`](e_ecommerce_agent) |
+
+## Video walkthrough
+
+[![Video walkthrough of all five ADK agents](https://img.youtube.com/vi/SFmTmT9PZ9s/hqdefault.jpg)](https://youtu.be/SFmTmT9PZ9s)
+
+The video walks through the code of each agent and runs all five live with Gemini:
+(a) lead generation, (b) Gemini CLI as a tool, (c) MCP bug assistant, (d) code review assistant and (e) the Finn e-commerce agent.
+Each agent's own README lists the demo prompts used.
 
 ## Architecture at a glance
 
@@ -71,7 +79,7 @@ need the **MCP Toolbox for Databases** server and PostgreSQL — the READMEs sho
 ./run_tests.sh          # runs every agent's suite
 ```
 
-All 48 tests run **offline** — a scripted fake model (`common/adk_testing.py`) drives the *real* ADK agent
+All 49 tests run **offline** — a scripted fake model (`common/adk_testing.py`) drives the *real* ADK agent
 graphs, so pipelines, parallel fan-out, loops, callbacks, state hand-offs and artifacts are verified without
 API keys. The (c) and (e) suites additionally run end-to-end through a live MCP Toolbox + PostgreSQL when
 those are running (they are skipped otherwise).
@@ -80,7 +88,7 @@ those are running (they are skipped otherwise).
 |---|---|
 | a (5) | per-company fan-out (9 model calls for 2 companies), invalid leads filtered and ranked, artifact saved, guardrail, root state machine |
 | b (13) | URL allow-list blocks shell injection; CLI called read-only with JSON output; 3 analysts run **concurrently** (3×1 s in < 2.5 s) |
-| c (15) | GitHub read-only filter; Toolbox configs consistent; agent → MCP → Postgres duplicate search and create/update ticket |
+| c (16) | GitHub read-only allow-list; Toolbox configs consistent; agent → MCP → Postgres duplicate search and create/update ticket |
 | d (9) | deterministic PEP 8 / AST / grading; review pipeline e2e; LoopAgent retries a PARTIAL fix then exits on SUCCESS |
 | e (6) | identity never exposed to the model; prod config takes email from Google token; users isolated end-to-end; session hijack blocked |
 
