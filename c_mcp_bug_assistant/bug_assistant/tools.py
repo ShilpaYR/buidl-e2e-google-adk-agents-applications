@@ -107,16 +107,18 @@ toolbox_tools = _toolbox_toolset()
 
 
 # ---------------------------------------------------------------- 5. GitHub remote MCP (API)
-READ_VERBS = ("search_", "list_", "get_")
-READ_DOMAINS = ("issue", "pull_request", "repositor", "commit", "release", "code")
+# Explicit allow-list of read-only tools (the set used in Google's tutorial, with
+# both the older and newer GitHub MCP tool names). A short, known list keeps
+# write actions hidden and the model's tool list small.
+GITHUB_READ_TOOLS = {
+    "search_repositories", "search_issues", "list_issues", "get_issue", "issue_read",
+    "list_pull_requests", "get_pull_request", "pull_request_read",
+}
 
 
 def github_read_only(tool: Any, readonly_context: Any = None) -> bool:
-    """Tool filter: expose only read-only issue/PR/repo tools.
-    Hides write actions from the model and keeps the tool list small."""
-    name = getattr(tool, "name", str(tool))
-    is_read = name.startswith(READ_VERBS) or name.endswith("_read")
-    return is_read and any(d in name for d in READ_DOMAINS)
+    """Tool filter: only the read-only GitHub tools listed above."""
+    return getattr(tool, "name", str(tool)) in GITHUB_READ_TOOLS
 
 
 def _github_toolset() -> Optional[Any]:
@@ -126,7 +128,17 @@ def _github_toolset() -> Optional[Any]:
         return None
     from google.adk.tools.mcp_tool import McpToolset, StreamableHTTPConnectionParams
 
-    return McpToolset(
+    class SafeMcpToolset(McpToolset):
+        """If GitHub refuses or is unreachable, run without its tools instead of failing."""
+
+        async def get_tools(self, readonly_context=None):
+            try:
+                return await super().get_tools(readonly_context)
+            except Exception as exc:
+                log.warning("GitHub MCP unavailable, continuing without it: %s", exc)
+                return []
+
+    return SafeMcpToolset(
         connection_params=StreamableHTTPConnectionParams(
             url=os.getenv("GITHUB_MCP_URL", "https://api.githubcopilot.com/mcp/"),
             headers={

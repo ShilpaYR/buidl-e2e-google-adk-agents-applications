@@ -68,7 +68,7 @@ SPECS = {
               [("gemini_cli", {"task": "Explain this codebase in 5 bullets",
                                "github_url": "https://github.com/derrickchwong/gemini-cli-on-adk"})]),
     "c": Spec("(c) MCP bug assistant", "Users say the login page freezes after 3 wrong passwords. "
-              "Is there already a ticket for this?",
+              "Is there already a ticket for this in our ticket database?",
               ["search-tickets", "get-tickets-by-status"], 12, 240,
               [("search-tickets", {"query": "login page freezes after failed attempts"})]),
     "d": Spec("(d) Code review", f"Please review this code:\n```python\n{DFS}\n```",

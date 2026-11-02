@@ -24,7 +24,7 @@ def test_function_tool():
 
 @pytest.mark.parametrize("name,allowed", [
     ("search_issues", True), ("list_issues", True), ("issue_read", True),
-    ("get_pull_request", True), ("search_repositories", True),
+    ("get_pull_request", True), ("search_repositories", True), ("pull_request_read", True),
     ("create_issue", False), ("merge_pull_request", False), ("delete_file", False),
     ("get_me", False),
 ])
