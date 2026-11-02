@@ -1,6 +1,6 @@
 # Local infrastructure for agents (c) and (e):
 #   postgres          :5432  tickets DB (c) + store DB (e), sample data loaded on first start
-#   toolbox-tickets   :5000  MCP Toolbox for Databases  → ticketsdb  (bug assistant)
+#   toolbox-tickets   :5002  MCP Toolbox for Databases  → ticketsdb  (bug assistant)
 #   toolbox-store     :5001  MCP Toolbox for Databases  → store      (Finn)
 # setup.sh starts only `postgres` here and runs Toolbox natively (npx), because Toolbox
 # ships no linux-arm64 build. To run everything in Docker instead:
@@ -28,10 +28,10 @@ services:
     platform: linux/amd64
     image: node:22-slim
     working_dir: /cfg
-    command: ["npx", "-y", "@toolbox-sdk/server@1.15.0", "--config", "/cfg/tools.local.yaml", "--address", "0.0.0.0", "--port", "5000"]
+    command: ["npx", "-y", "@toolbox-sdk/server@1.15.0", "--config", "/cfg/tools.local.yaml", "--address", "0.0.0.0", "--port", "5002"]
     environment: {DB_HOST: postgres, DB_USER: postgres, DB_PASS: postgres}
     volumes: ["./c_mcp_bug_assistant/mcp-toolbox:/cfg:ro"]
-    ports: ["5000:5000"]
+    ports: ["5002:5002"]
     depends_on: {postgres: {condition: service_healthy}}
 
   toolbox-store:

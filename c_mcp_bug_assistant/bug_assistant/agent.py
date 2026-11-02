@@ -8,7 +8,7 @@
             └─ McpToolset                  GitHub remote MCP server (read-only)
 
 Run locally:
-  toolbox --config mcp-toolbox/tools.local.yaml --port 5000   # terminal 1
+  toolbox --config mcp-toolbox/tools.local.yaml --port 5002   # terminal 1
   adk web                                                     # terminal 2
 """
 

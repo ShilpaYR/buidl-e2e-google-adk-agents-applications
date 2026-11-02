@@ -1,5 +1,5 @@
 """Unit tests run anywhere. Integration tests run when MCP Toolbox is up:
-    toolbox --config mcp-toolbox/tools.local.yaml --port 5000
+    toolbox --config mcp-toolbox/tools.local.yaml --port 5002
 They drive the REAL agent → ToolboxToolset → MCP Toolbox → PostgreSQL path,
 with only the LLM replaced by a scripted fake."""
 

@@ -1,5 +1,5 @@
 # MCP Toolbox for Databases — LOCAL mode (plain PostgreSQL, keyword search).
-# Start:  toolbox --tools-file mcp-toolbox/tools.local.yaml --port 5000
+# Start:  toolbox --config mcp-toolbox/tools.local.yaml --port 5002
 # Passwords come from the environment, never from this file.
 sources:
   tickets-db:

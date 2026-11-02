@@ -80,7 +80,7 @@ langchain_tool = _stackexchange_tool()
 
 
 # ---------------------------------------------------------------- 4. MCP Toolbox (database)
-TOOLBOX_URL = os.getenv("MCP_TOOLBOX_URL", "http://127.0.0.1:5000").rstrip("/")
+TOOLBOX_URL = os.getenv("MCP_TOOLBOX_URL", "http://127.0.0.1:5002").rstrip("/")
 TOOLBOX_TOOLSET = os.getenv("TOOLBOX_TOOLSET", "tickets_toolset")
 
 
@@ -89,7 +89,7 @@ def _toolbox_reachable(url: str, toolset: str) -> bool:
     /api/toolset REST route now returns 410 Gone — clients speak MCP.)"""
     try:
         with urllib.request.urlopen(f"{url}/", timeout=2) as resp:
-            return resp.status == 200
+            return resp.status == 200 and b"Hello" in resp.read(200)
     except Exception:
         return False
 

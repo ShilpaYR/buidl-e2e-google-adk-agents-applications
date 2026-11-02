@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run every agent's test suite. Optional live MCP integration tests run when
-# Toolbox is up on :5000 (bug assistant) and :5001 (e-commerce).
+# Toolbox is up on :5002 (bug assistant) and :5001 (e-commerce).
 set -uo pipefail
 cd "$(dirname "$0")"
 status=0

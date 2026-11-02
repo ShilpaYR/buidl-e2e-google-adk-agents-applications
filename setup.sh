@@ -21,7 +21,9 @@ ok()   { printf '    \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '    \033[33m!\033[0m %s\n' "$*"; }
 die()  { printf '\n\033[31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
-up()   { curl -s -o /dev/null -m 2 "http://127.0.0.1:$1/"; }
+# A real MCP Toolbox answers "/" with "Hello, World". Checking the body matters on macOS,
+# where AirPlay Receiver also answers on some ports (5000, 7000) and would look "up".
+up()   { curl -s -m 2 "http://127.0.0.1:$1/" 2>/dev/null | grep -q "Hello"; }
 
 # ------------------------------------------------------------------ python
 python_env() {
@@ -135,7 +137,7 @@ if gem == "gemini" and _old_b.exists():  # keep a local Gemini CLI path chosen b
             gem = _l.split("=", 1)[1]
 extra = {
     "b_gemini_cli_tool_agent": {"GEMINI_API_KEY": key, **({"GEMINI_CLI_BIN": gem} if gem != "gemini" else {})},
-    "c_mcp_bug_assistant": {"MCP_TOOLBOX_URL": "http://127.0.0.1:5000", **({"GITHUB_PERSONAL_ACCESS_TOKEN": gh} if gh else {})},
+    "c_mcp_bug_assistant": {"MCP_TOOLBOX_URL": "http://127.0.0.1:5002", **({"GITHUB_PERSONAL_ACCESS_TOKEN": gh} if gh else {})},
     "e_ecommerce_agent": {"ECOMMERCE_TOOLBOX_URL": "http://127.0.0.1:5001", "AUTH_MODE": "demo",
                           "DEMO_USER_EMAIL": "alex.rivera@example.com"},
 }
@@ -187,6 +189,9 @@ postgres() {
 start_toolbox() { # port config
   local port="$1" cfg="$2"
   if up "$port"; then ok "Toolbox already running on :$port"; return; fi
+  if curl -s -o /dev/null -m 2 "http://127.0.0.1:$port/"; then
+    die "port $port is used by another program (on a Mac, AirPlay Receiver uses 5000/7000) — free it and re-run"
+  fi
   DB_HOST=127.0.0.1 DB_USER=postgres DB_PASS=postgres nohup npx -y "$TOOLBOX_PKG" \
     --config "$cfg" --address 127.0.0.1 --port "$port" >"$RUN/toolbox-$port.log" 2>&1 &
   echo $! >"$RUN/toolbox-$port.pid"
@@ -199,7 +204,7 @@ start_toolbox() { # port config
 
 toolbox() {
   say "MCP Toolbox for Databases"
-  start_toolbox 5000 "$ROOT/c_mcp_bug_assistant/mcp-toolbox/tools.local.yaml"
+  start_toolbox 5002 "$ROOT/c_mcp_bug_assistant/mcp-toolbox/tools.local.yaml"
   start_toolbox 5001 "$ROOT/e_ecommerce_agent/toolbox/tools.local.yaml"
 }
 

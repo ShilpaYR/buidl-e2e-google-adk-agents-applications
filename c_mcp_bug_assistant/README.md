@@ -26,8 +26,8 @@ flowchart LR
 # 1. PostgreSQL (any local install, Docker, or Cloud SQL proxy)
 psql -U postgres -f db/schema.sql && psql -U postgres -f db/seed.sql
 # 2. MCP Toolbox for Databases (terminal 1)
-npx @toolbox-sdk/server --config mcp-toolbox/tools.local.yaml --port 5000
-#    (or the binary: toolbox --config mcp-toolbox/tools.local.yaml --port 5000)
+npx @toolbox-sdk/server --config mcp-toolbox/tools.local.yaml --port 5002
+#    (or the binary: toolbox --config mcp-toolbox/tools.local.yaml --port 5002)
 # 3. Agent (terminal 2)
 pip install -r ../requirements.txt && cp ../.env.example .env   # add GITHUB_PERSONAL_ACCESS_TOKEN (public-repo read only)
 adk web
@@ -44,6 +44,6 @@ Demo prompts (in this order for the video):
 ## Test & deploy
 
 ```bash
-python -m pytest -q -rs      # unit tests always; MCP integration tests when Toolbox runs on :5000
+python -m pytest -q -rs      # unit tests always; MCP integration tests when Toolbox runs on :5002
 ./deploy.sh database && ./deploy.sh toolbox && ./deploy.sh agent
 ```
